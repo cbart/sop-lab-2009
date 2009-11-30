@@ -6,9 +6,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
 #include <pthread.h>
 
 #include "err.h"
+#include "ipc_msg.h"
 
 void * server_thread(void *arg)
 /* Co trzeba przekazać tej funkcji?
@@ -25,8 +28,12 @@ void * server_thread(void *arg)
                 return koniec;
             pthread_cleanup_push(odpowiedz_klientowi_bledem());
             pobierz_rozkaz();
-            obsłuż_rozkaz();
-            zwróć_wynik();
+            if(!rozkaz_jest_poprawny())
+                zwróć_wynik(błąd);
+            else {
+                obsłuż_rozkaz();
+                zwróć_wynik();
+            }
             pthread_cleanup_pop(FALSE);  /* odpowiedz_klientowi_bledem(); */
         }
         timedwait_result = pthread_cond_timedwait(cond, mutex, abstime);
@@ -51,33 +58,34 @@ void * server_thread(void *arg)
  * bierze liczbę odpalonych procesów, tworzy wątek o indeksie równym tej liczbie
  * i dodaje jedynkę do liczby odpalonych procesów.
  *
- * Odpowiedź po IPC jest prosta. Dajemy po prostu typ taki jak PID pytającego
- * procesu. Ale jak wysłać zapytanie do serwera? w sensie, skąd klient ma
- * wiedzieć jaki jest numer IPC serwera?
- * ODP:
- * long cwd_string_size;
- * char *cwd;
- * char *buf;
- * cwd_string_size = pathconf(".", _PC_PATH_MAX);
- * if((buf = (char *) malloc((size_t) cwd_string_size)) == NULL)
- *     syserr("malloc");
- * cwd = getcwd(buf, (size_t) cwd_string_size);
- *
- * key_t ipc_key;
- * if((ipc_key = ftok(cwd, '*')) == (key_t) -1)
- *     syserr("ftok");
- * to trzeba zamknąć w jakiejś funkcji get_ipc_key...
  */
 int main(void)
 {
+    int msg_id;
+    struct msgbuf *buffer;
+    size_t buf_size;
+    key_t ipc_key = get_ipc_key();
+
+    /* Create IPC queue. */
+    msg_id = msgget(ipc_key, IPC_CREAT|IPC_EXCL);
+
     while(TRUE) {
-        pobierz_rozkaz_z_IPC();
+        /* Get request from IPC. */
+        if(msgrcv(msg_id, buffer, buf_size, IPC_ORDERS_RESERVED, 0) == -1)
+            syserr("msgrcv: While receiving IPC message.");
+        
         dodaj_rozkaz_do_kolejki_rozkazów();
         if(wątek czeka)
             obudź wątek;
         else if(liczba wątków < maksymalna liczba wątkow)
             utwórz wątek;
     }
+
+    // zakończ wszystkie wątki
+
+    /* Remove IPC queue. */
+    if(msgctl(msg_id, IPC_RMID, NULL) != 0)
+        syserr("msgctl: While removing IPC message queue.");
     return 0;
 }
 

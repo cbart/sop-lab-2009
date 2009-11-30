@@ -1,3 +1,7 @@
+/** Thread pool.                                           *
+ * author: Cezary Bartoszuk <cbart@students.mimuw.edu.pl>  *
+ *     id: cb277617@students.mimuw.edu.pl                  */
+
 #ifndef _THREAD_POOL_H_
 #define _THREAD_POOL_H_
 
@@ -47,11 +51,17 @@ typedef struct thread_pool
     thread_id_stack *unused;
 } thread_pool;
 
-/** Creates new thread pool. */
+/** Creates new thread pool.
+ * Returns:
+ *   `-1` in case of an error.
+ *   `0` in other cases. */
 int thread_pool_create(thread_pool *new_pool, long max_running_threads);
 
 /** Gets place for the new thread in the pool or `NULL` if there is no space. */
 pthread_t * thread_pool_get_free(thread_pool *pool);
+
+/** Makes a thread return to pool of free threads. */
+void thread_pool_return_thread(thread_pool *pool, pthread_t *joined_thread);
 
 /** Destroys thread pool pointed by `pool`. */
 void thread_pool_destroy(thread_pool *pool);

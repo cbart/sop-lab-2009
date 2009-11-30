@@ -1,3 +1,7 @@
+/** Thread pool.                                           *
+ * author: Cezary Bartoszuk <cbart@students.mimuw.edu.pl>  *
+ *     id: cb277617@students.mimuw.edu.pl                  */
+
 #include <sys/types.h>
 #include <pthread.h>
 #include <assert.h>
@@ -45,12 +49,15 @@ void stack_destroy(thread_id_stack *stack)
 
 int thread_pool_create(thread_pool *new_pool, long max_running_threads)
 {
+    thread_id i;
     if((new_pool->threads = (pthread_t *) calloc(sizeof(pthread_t),
                     (size_t) max_running_threads)) == NULL)
         return -1;
     new_pool->running_threads = 0;
     new_pool->max_running_threads = max_running_threads;
     new_pool->stack = NULL;
+    for(i = 0; i < max_running_threads; i ++)
+        new_pool->stack = stack_push(new_pool->stack, i)
     return 0;
 }
 
@@ -61,12 +68,18 @@ pthread_t * thread_pool_get_free(thread_pool *pool)
     if(!stack_empty(pool->stack)) {
         free_thread_place = pool->threads + stack_top(pool->stack);
         stack_pop(pool->stack);
+        pool->running_threads ++;
         return free_thread_place;
     }
-    else if(pool->running_threads < pool->max_running_threads) {
-        free_thread_place = pool->threads + pool->running_threads;
-        pool->running_threads
-    }
+    return NULL;
+}
+
+void thread_pool_return_thread(thread_pool *pool, pthread_t *joined_thread)
+{
+    assert(pool != NULL);
+    assert(pool->threads <= joined_thread && joined_thread < pool->threads +
+            pool->max_running_threads);
+    pool->stack = stack_push(pool->stack, joined_thread - pool->threads);
 }
 
 void thread_pool_destroy(thread_pool *pool)

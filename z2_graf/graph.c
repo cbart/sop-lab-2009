@@ -1,75 +1,53 @@
-/** author: Cezary Bartoszuk
- *  e-mail: cbart@students.mimuw.edu.pl
- *      id: cb277617 */
+/** Graph.                                                 *
+ * author: Cezary Bartoszuk <cbart@students.mimuw.edu.pl>  *
+ *     id: cb277617@students.mimuw.edu.pl                  */
 
 #include <stdlib.h>
 #include "err.h"
 #include "graph.h"
 #include "assert.h"
 
-Verticle initVert(Integer index)
+graph* graph_init(long vertices_quantity)
 {
-    /* In current implementation `Verticle` is simply its index.
-     * But it may not in the future, so please use `initVert`
-     * for creating a verticle. */
-    return index;
-}
-
-Integer getIndex(Verticle v)
-{
-    return v;
-}
-
-Edge initEdge(Integer from_index, Integer to_index, Weight weight)
-{
-    Edge e;
-    e.from = from_index;
-    e.to = to_index;
-    e.weight = weight;
-    return e;
-}
-
-Graph* initGraph(Integer verticles_quantity)
-{
-    Integer i;
-    Graph *new_graph;
-    Weight **new_edges;
+    long i;
+    graph *new_graph;
+    weight_t **new_edges;
     /* Allocates space for `Graph` structure and the edges. */
-    if(NULL == (new_graph = (Graph *) malloc(sizeof(Graph))))
-        syserr("initGraph: while allocating Graph in malloc(size_t).");
-    if(NULL == (new_edges = (Weight **) calloc(verticles_quantity,
-                    sizeof(Weight *))))
-        syserr("initGraph: while allocating edges array "
+    if(NULL == (new_graph = (graph *) malloc(sizeof(graph))))
+        syserr("graph_init: while allocating Graph in malloc(size_t).");
+    if(NULL == (new_edges = (weight_t **) calloc(vertices_quantity,
+                    sizeof(weight *))))
+        syserr("graph_init: while allocating edges array "
                 "(first dimension) in calloc(size_t, size_t).");
-    for(i = 0; i < verticles_quantity; i ++)
-        if(NULL ==(new_edges[i] = (Weight *) calloc(verticles_quantity,
-                        sizeof(Weight))))
-            syserr("initGraph: while allocating edges array "
+    for(i = 0; i < vertices_quantity; i ++)
+        if(NULL ==(new_edges[i] = (weight_t *) calloc(vertices_quantity,
+                        sizeof(weight_t))))
+            syserr("graph_init: while allocating edges array "
                     "(second dimension) in calloc(size_t, size_t)");
-    new_graph->verticles_quantity = verticles_quantity;
+    new_graph->vertices_quantity = vertices_quantity;
     new_graph->edge_weights = new_edges;
     return new_graph;
 }
 
-void destroyGraph(Graph *q)
+void graph_destroy(graph *g)
 {
-    Integer i;
-    assert(q != NULL);
-    assert(q->edge_weights != NULL);
-    for(i = q->verticles_quantity - 1; i >= 0; i --) {
-        assert(q->edge_weights != NULL);
-        free(q->edge_weights[i]);
+    long i;
+    assert(g != NULL);
+    assert(g->edge_weights != NULL);
+    for(i = g->vertices_quantity - 1; i >= 0; i --) {
+        assert(g->edge_weights != NULL);
+        free(g->edge_weights[i]);
     }
-    free(q->edge_weights);
-    free(q);
+    free(g->edge_weights);
+    free(g);
 }
 
-int changeEdge(Graph *g, Edge e)
+int graph_chenge_edge(graph *g, long edge_from, long edge_to, weight_t weight)
 {
     assert(g != NULL);
-    if((0 <= e.from) && (e.from < g->verticles_quantity)
-            && (0 <= e.to) && (e.to < g->verticles_quantity)) {
-        g->edge_weights[e.from][e.to] = e.weight;
+    if((0 <= edge_from) && (edge_from < g->vertices_quantity)
+            && (0 <= edge_to) && (edge_to < g->vertices_quantity)) {
+        g->edge_weights[edge_from][edge_to] = weight;
         return 0;
     }
     else

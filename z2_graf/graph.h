@@ -1,55 +1,32 @@
-/** author: Cezary Bartoszuk
- *  e-mail: cbart@students.mimuw.edu.pl
- *      id: cb277617 */
+/** Graph.                                                 *
+ * author: Cezary Bartoszuk <cbart@students.mimuw.edu.pl>  *
+ *     id: cb277617@students.mimuw.edu.pl                  */
 
 #ifndef _GRAPH_H_
 #define _GRAPH_H_
 
 #include <stdlib.h>
 
-//TODO: znajdź dobre miejsce na tę deklarację...
-typedef long Integer;
-
-/** Verticle in a `Graph`. */
-typedef Integer Verticle;
-
-/** Inits verticle of given index. */
-Verticle initVert(Integer index);
-
-/** Extracts index from `v`. */
-Integer getIndex(Verticle v);
-
 /** Weight of `Graph`s edge. */
-typedef long Weight;
-
-/** Edge in a `Graph`. */
-typedef struct Edge
-{
-    Integer from;
-    Integer to;
-    Weight weight;
-} Edge;
-
-/** Inits edge with given `Verticle` indexes and given `weight`. */
-Edge initEdge(Integer from_index, Integer to_index, Weight weight);
+typedef long weight_t;
 
 /** Graph. */
-typedef struct Graph
+typedef struct graph
 {
-    Integer verticles_quantity;
-    Weight **edge_weights;
+    long vertices_quantity;
+    weight_t **edge_weights;
 } Graph;
 
 /** Inits empty graph (with no edges). */
-Graph* initGraph(Integer edges_quantity);
+graph* graph_init(long vertices_quantity);
 
 /** Destroys graph pointed by `g`. */
-void destroyGraph(Graph *g);
+void graph_destroy(graph *g);
 
 /** Changes given `Edge` in `Graph` pointed by `g`.
  * Return value:
  *   `0` - if edge was inserted properly.
  *  `-1` - if edge is incorrect (e.g. verticle indexes out of bounds). */
-int changeEdge(Graph *g, Edge e);
+int graph_change_edge(graph *g, long edge_from, long edge_to, weight_t weight);
 
 #endif
