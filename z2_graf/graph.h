@@ -15,10 +15,13 @@ typedef struct graph
 {
     long vertices_quantity;
     weight_t **edge_weights;
-} Graph;
+} graph;
 
-/** Inits empty graph (with no edges). */
-graph* graph_init(long vertices_quantity);
+/** Inits empty graph (with no edges).
+ * Returns:
+ *   `-1` when an error occured,
+ *   `0` otherwise. */
+int graph_init(graph *new_graph, long vertices_quantity);
 
 /** Destroys graph pointed by `g`. */
 void graph_destroy(graph *g);
@@ -26,7 +29,10 @@ void graph_destroy(graph *g);
 /** Changes given `Edge` in `Graph` pointed by `g`.
  * Return value:
  *   `0` - if edge was inserted properly.
- *  `-1` - if edge is incorrect (e.g. verticle indexes out of bounds). */
+ *   `-1` - if edge is incorrect (e.g. verticle indexes out of bounds). */
 int graph_change_edge(graph *g, long edge_from, long edge_to, weight_t weight);
+
+/** Computes cost of hamilton cycle. */
+long graph_hamilton_cost(graph *g, long verticles_q, long* verticles);
 
 #endif

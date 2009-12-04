@@ -14,7 +14,7 @@ typedef long thread_id;
 typedef struct thread_id_stack
 {
     thread_id id;
-    thread_id_stack *next;
+    struct thread_id_stack *next;
 } thread_id_stack;
 
 /** Indicates if given `stack` is empty.

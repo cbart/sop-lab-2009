@@ -10,9 +10,9 @@
 #include <sys/msg.h>
 
 #include "graph.h"
-#include "order.h"
+#include "customtypes.h"
 
-#define CHAR_FLAG "*"
+#define CHAR_FLAG '*'
 
 /** Messages with types of range [1..IPC_ORDERS_RESERVED]
  * are reserved for Client->Server queries.
@@ -28,7 +28,8 @@ typedef struct order_t
 {
     char order_type; /** ['+', '-', 'H']; */
     long vertices[ORDER_MAX_VERTICES];
-    Weight edge_weight; /** if order_type == '+' here is the edge weight. */
+    long vertices_quantity;
+    weight_t edge_weight; /** if order_type == '+' here is the edge weight. */
 } order_t;
 
 /** Creates order, which adds edge `edge_from`->`edge_to`
@@ -42,7 +43,48 @@ order_t order_remove_edge(long edge_from, long edge_to);
  * in a subgraph of given vertices array. */
 order_t order_hamilton_cycle(long vertices_quantity, long *vertices);
 
+/** Checks if `order` is performable on given graph `g`.
+ * Returns:
+ *   `FALSE` if order is not performable on given graph.
+ *   `TRUE` in other cases. */
+bool order_is_performable(order_t order, graph *g);
 
+/** Single node of orders queue. */
+typedef struct queue_node
+{
+    order_t order;
+    struct queue_node *next;
+} queue_node;
+
+/** Queue of orders. */
+typedef struct orders_queue
+{
+    queue_node *front;
+    queue_node *back;
+} orders_queue;
+
+/** Creates empty queue with given structure. */
+void queue_create(orders_queue *q);
+
+/** Indicates if given orders queue is empty.
+ * Returns:
+ *   `TRUE` if queue is empty,
+ *   `FALSE` otherwise. */
+bool queue_empty(orders_queue *q);
+
+/** Pushes given `order` into end of the `q` order queue.
+ * Returns:
+ *   `0` if everything went ok.
+ *   `-1` if an error occured. */
+int queue_push(orders_queue *q, order_t order);
+
+/** Pops element from front of `q` and assings it to a structure
+ * pointed by `order`.
+ * If the queue is empty - does nothing. */
+void queue_pop(orders_queue *q, order_t *order);
+
+/** Clears given queue. */
+void queue_clear(orders_queue *q);
 
 /** Generates ipc key.
  * Returns:

@@ -3,6 +3,7 @@
  *     id: cb277617@students.mimuw.edu.pl                  */
 
 #include <sys/types.h>
+#include <stdlib.h>
 #include <pthread.h>
 #include <assert.h>
 
@@ -55,9 +56,9 @@ int thread_pool_create(thread_pool *new_pool, long max_running_threads)
         return -1;
     new_pool->running_threads = 0;
     new_pool->max_running_threads = max_running_threads;
-    new_pool->stack = NULL;
+    new_pool->unused = NULL;
     for(i = 0; i < max_running_threads; i ++)
-        new_pool->stack = stack_push(new_pool->stack, i)
+        new_pool->unused = stack_push(new_pool->unused, i);
     return 0;
 }
 
@@ -65,9 +66,9 @@ pthread_t * thread_pool_get_free(thread_pool *pool)
 {
     pthread_t *free_thread_place;
     assert(pool != NULL);
-    if(!stack_empty(pool->stack)) {
-        free_thread_place = pool->threads + stack_top(pool->stack);
-        stack_pop(pool->stack);
+    if(!stack_empty(pool->unused)) {
+        free_thread_place = pool->threads + stack_top(pool->unused);
+        stack_pop(pool->unused);
         pool->running_threads ++;
         return free_thread_place;
     }
@@ -79,14 +80,14 @@ void thread_pool_return_thread(thread_pool *pool, pthread_t *joined_thread)
     assert(pool != NULL);
     assert(pool->threads <= joined_thread && joined_thread < pool->threads +
             pool->max_running_threads);
-    pool->stack = stack_push(pool->stack, joined_thread - pool->threads);
+    pool->unused = stack_push(pool->unused, joined_thread - pool->threads);
 }
 
 void thread_pool_destroy(thread_pool *pool)
 {
     assert(pool != NULL);
     free(pool->threads);
-    if(thread_pool->stack != NULL)
-        stack_destroy(thread_pool->stack);
+    if(pool->unused != NULL)
+        stack_destroy(pool->unused);
 }
 

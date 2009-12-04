@@ -3,30 +3,27 @@
  *     id: cb277617@students.mimuw.edu.pl                  */
 
 #include <stdlib.h>
+#include <assert.h>
 #include "err.h"
 #include "graph.h"
-#include "assert.h"
 
-graph* graph_init(long vertices_quantity)
+int graph_init(graph *new_graph, long vertices_quantity)
 {
     long i;
-    graph *new_graph;
     weight_t **new_edges;
     /* Allocates space for `Graph` structure and the edges. */
-    if(NULL == (new_graph = (graph *) malloc(sizeof(graph))))
-        syserr("graph_init: while allocating Graph in malloc(size_t).");
     if(NULL == (new_edges = (weight_t **) calloc(vertices_quantity,
-                    sizeof(weight *))))
-        syserr("graph_init: while allocating edges array "
-                "(first dimension) in calloc(size_t, size_t).");
+                    sizeof(weight_t *))))
+        return -1;
     for(i = 0; i < vertices_quantity; i ++)
         if(NULL ==(new_edges[i] = (weight_t *) calloc(vertices_quantity,
-                        sizeof(weight_t))))
-            syserr("graph_init: while allocating edges array "
-                    "(second dimension) in calloc(size_t, size_t)");
+                        sizeof(weight_t)))) {
+            //TODO: dealokacja zasobów z malloca powyżej;
+            return -1;
+        }
     new_graph->vertices_quantity = vertices_quantity;
     new_graph->edge_weights = new_edges;
-    return new_graph;
+    return 0;
 }
 
 void graph_destroy(graph *g)
@@ -52,4 +49,11 @@ int graph_chenge_edge(graph *g, long edge_from, long edge_to, weight_t weight)
     }
     else
         return -1;
+}
+
+long graph_hamilton_cost(graph *g, long verticles_q, long *verticles)
+{
+    assert(g != NULL);
+    assert(verticles != NULL);
+    
 }
