@@ -16,3 +16,5 @@ clean:
 	@rm -f *.o *~
 
 .PHONY: clean all
+
+.SUFFIXES: .c .h

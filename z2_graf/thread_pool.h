@@ -8,6 +8,8 @@
 #include <sys/types.h>
 #include <pthread.h>
 
+#include "customtypes.h"
+
 typedef long thread_id;
 
 /** Stack of thread ids. */
@@ -46,6 +48,7 @@ void stack_destroy(thread_id_stack *stack);
 typedef struct thread_pool
 {
     pthread_t *threads;
+    bool *working;
     pthread_condattr_t cond_attr;
     pthread_cond_t sleeping;
     long running_threads;

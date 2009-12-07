@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #include "thread_pool.h"
+#include "customtypes.h"
 
 int stack_empty(thread_id_stack *stack)
 {
@@ -54,8 +55,11 @@ void stack_destroy(thread_id_stack *stack)
 int thread_pool_create(thread_pool *new_pool, long max_running_threads)
 {
     thread_id i;
-    if((new_pool->threads = (pthread_t *) calloc(sizeof(pthread_t),
-                    (size_t) max_running_threads)) == NULL)
+    if((new_pool->threads = (pthread_t *) calloc((size_t) max_running_threads,
+                sizeof(pthread_t))) == NULL)
+        return -1;
+    if((new_pool->working = (bool *) calloc((size_t) max_running_threads,
+                sizeof(bool))) == NULL)
         return -1;
     if(pthread_condattr_init(&(new_pool->cond_attr)) != 0)
         return -1;
@@ -138,6 +142,7 @@ int thread_pool_destroy(thread_pool *pool)
             return -1;
     if(pthread_condattr_destroy(&(pool->cond_attr)))
         return -1;
+    free(pool->working);
     free(pool->threads);
     return 0;
 }

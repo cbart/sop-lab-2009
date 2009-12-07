@@ -29,9 +29,6 @@ volatile sig_atomic_t signal_occurence = 0;
 /* Handling signal. */
 void signal_handler(int sig_num)
 {
-    order_msgbuf message;
-    message.msg_type = IPC_ORDERS_RESERVED;
-    message.order = order_signal();
     if(signal_occurence == 0) {
         signal_occurence = 1;
     }
@@ -53,13 +50,19 @@ typedef struct thread_info_t
 
 void thread_register(void *arg)
 {
-    //thread_info_t *info = (thread_info_t *) arg;
+    thread_info_t *info = (thread_info_t *) arg;
+    info->pool->working[info->id] = TRUE;
 }
 
 void thread_unregister(void *arg)
 {
     thread_info_t *info = (thread_info_t *) arg;
+    if(pthread_mutex_lock(info->pool_sem) != 0)
+        syserr("pthread_mutex_lock: While locking thread pool semaphore.");
+    info->pool->working[info->id] = FALSE;
     thread_pool_return_thread(info->pool, info->pool->threads + info->id);
+    if(pthread_mutex_unlock(info->pool_sem) != 0)
+        syserr("pthread_mutex_unlock: While unlocking thread pool sem.");
 }
 
 void thread_sleep(void *arg)
@@ -75,24 +78,44 @@ void thread_sleep(void *arg)
     ts.tv_sec += info->wait_abstime;
 
     if(info->wait_abstime > 0) {
+        if(pthread_mutex_unlock(info->orders_sem) != 0)
+            syserr("pthread_mutex_unlock: While unlocking orders semaphore.");
+        if(pthread_mutex_lock(info->pool_sem) != 0)
+            syserr("pthread_mutex_lock: While locking thread pool sem.");
         thread_pool_thread_sleep(info->pool);
         timedwait_result = pthread_cond_timedwait(&info->pool->sleeping,
-                info->orders_sem, &ts);
+                info->pool_sem, &ts);
         thread_pool_thread_awoken(info->pool);
+        if(pthread_mutex_unlock(info->pool_sem) != 0)
+            syserr("pthread_mutex_lock: While unlocking thread pool sem.");
+        if(pthread_mutex_lock(info->orders_sem) != 0)
+            syserr("pthread_mutex_lock: While locking orders semaphore.");
         if(timedwait_result != 0 && timedwait_result != ETIMEDOUT)
             syserr("phtread_cond_timedwait: in thread while waiting.");
     }
 }
 
+int cmp(const void *a_ptr, const void *b_ptr)
+{
+    long a = *((const long *) a_ptr);
+    long b = *((const long *) b_ptr);
+    if(a < b)
+        return -1;
+    else if(a == b)
+        return 0;
+    else  /* a > b */
+        return 1;
+}
+
 /* Thread execution function. */
 void * server_thread(void *arg)
 {
-    fprintf(stderr, "INFO: Thread started.\n"); /////////////////////////
     thread_info_t *info = (thread_info_t *) arg;
     order_t order;
     respond_msgbuf respond;
     thread_register((void *) info);
     pthread_cleanup_push(thread_unregister, (void *) info);
+    int i;
     if(pthread_mutex_lock(info->orders_sem) != 0)
         syserr("pthread_mutex_lock: While taking orders queue semaphore.");
     while(!queue_empty(info->orders)) {
@@ -110,27 +133,109 @@ void * server_thread(void *arg)
             else {
                 switch(order.order_type) {
                     case '+':
-                        fprintf(stderr, "INFO: Order is `+`.\n");
+                        if(order.vertices[0] < order.vertices[1]) {
+                            if(pthread_rwlock_wrlock(info->graph_sems +
+                                        order.vertices[0]) != 0)
+                                syserr("pthread_rwlock_wrlock: While adding "
+                                        "edge.");
+                            if(pthread_rwlock_wrlock(info->graph_sems +
+                                        order.vertices[1]) != 0)
+                                syserr("pthread_rwlock_wrlock: While adding "
+                                        "edge.");
+                        }
+                        else if(order.vertices[0] > order.vertices[1]) {
+                            if(pthread_rwlock_wrlock(info->graph_sems +
+                                        order.vertices[1]) != 0)
+                                syserr("pthread_rwlock_wrlock: While adding "
+                                        "edge.");
+                            if(pthread_rwlock_wrlock(info->graph_sems +
+                                        order.vertices[0]) != 0)
+                                syserr("pthread_rwlock_wrlock: While adding "
+                                        "edge.");
+                        }
+                        else {
+                            if(pthread_rwlock_wrlock(info->graph_sems +
+                                        order.vertices[0]) != 0)
+                                syserr("pthread_rwlock_wrlock: While adding "
+                                        "edge.");
+                        }
                         respond = make_respond(order,
                                 graph_change_edge(info->g,
                                     order.vertices[0],
                                     order.vertices[1],
                                     order.edge_weight));
+                        if(pthread_rwlock_unlock(info->graph_sems
+                                    + order.vertices[0]) != 0)
+                            syserr("pthread_rwlock_unlock: While adding "
+                                    "edge.");
+                        if(order.vertices[0] != order.vertices[1]) {
+                            if(pthread_rwlock_unlock(info->graph_sems
+                                        + order.vertices[1]) != 0)
+                                syserr("pthread_rwlock_unlock: While adding "
+                                        "edge.");
+                        }
                         break;
                     case '-':
-                        fprintf(stderr, "INFO: Order is `-`.\n");
+                        if(order.vertices[0] < order.vertices[1]) {
+                            if(pthread_rwlock_wrlock(info->graph_sems
+                                        + order.vertices[0]) != 0)
+                                syserr("pthread_rwlock_wrlock: While removing "
+                                        "edge.");
+                            if(pthread_rwlock_wrlock(info->graph_sems
+                                        + order.vertices[1]) != 0)
+                                syserr("pthread_rwlock_wrlock: While removing "
+                                        "edge.");
+                        }
+                        else if(order.vertices[0] > order.vertices[1]) {
+                            if(pthread_rwlock_wrlock(info->graph_sems
+                                        + order.vertices[1]) != 0)
+                                syserr("pthread_rwlock_wrlock: While removing "
+                                        "edge.");
+                            if(pthread_rwlock_wrlock(info->graph_sems
+                                        + order.vertices[0]) != 0)
+                                syserr("pthread_rwlock_wrlock: While removing "
+                                        "edge.");
+                        }
+                        else {
+                            if(pthread_rwlock_wrlock(info->graph_sems
+                                        + order.vertices[0]) != 0)
+                                syserr("pthread_rwlock_wrlock: While removing "
+                                        "edge.");
+                        }
                         respond = make_respond(order,
                                 1 - graph_change_edge(info->g,
                                     order.vertices[0],
                                     order.vertices[1],
                                     0));
+                        if(pthread_rwlock_unlock(info->graph_sems
+                                    + order.vertices[0]) != 0)
+                            syserr("pthread_rwlock_unlock: While removing "
+                                    "edge.");
+                        if(order.vertices[0] != order.vertices[1]) {
+                            if(pthread_rwlock_unlock(info->graph_sems
+                                        + order.vertices[1]) != 0)
+                                syserr("pthread_rwlock_unlock: While removing "
+                                        "edge.");
+                        }
                         break;
                     case 'H':
+                        qsort(order.vertices, (size_t) order.vertices_quantity,
+                                sizeof(long), cmp);
+                        for(i = 0; i < order.vertices_quantity; i++)
+                            if(pthread_rwlock_rdlock(info->graph_sems +
+                                        order.vertices[i]) != 0)
+                                syserr("pthread_rwlock_rdlock: While taking "
+                                        "graph semaphore.");
                         fprintf(stderr, "INFO: Order is `H`.\n");
                         respond = make_respond(order,
                                 graph_hamiltonian_cost(info->g,
                                     order.vertices_quantity,
                                     order.vertices));
+                        for(i = 0; i < order.vertices_quantity; i ++)
+                            if(pthread_rwlock_unlock(info->graph_sems +
+                                        order.vertices[i]) != 0)
+                                syserr("pthread_rwlock_rdlock: While unlocking "
+                                        "graph semaphore.");
                         break;
                     default:
                         fatal("(!!) internal error in executing order.");
@@ -313,6 +418,9 @@ int main(int argc, char **argv)
             syserr("pthread_mutex_unlock: While unlocking orders queue "
                     "semaphore in the main thread.");
         fprintf(stdlog, "INFO: Mutex unlocked.\n");
+        if(pthread_mutex_lock(&pool_mutex) != 0)
+            syserr("pthread_mutex_lock: While locking pool mutex "
+                    "in the main thread.");
         if(thread_pool_wakeup_waiting(&pool) != 0) {
             if((new_thread = thread_pool_get_free(&pool)) != NULL) {
                 fprintf(stdlog, "INFO: Creating new thread.\n");
@@ -327,17 +435,26 @@ int main(int argc, char **argv)
         }
         else
             fprintf(stdlog, "INFO: Thread signaled.\n");
+        if(pthread_mutex_unlock(&pool_mutex) != 0)
+            syserr("pthread_mutex_lock: While unlocking pool mutex "
+                    "in the main thread.");
     }
 
     fprintf(stdlog, "INFO: Clearing orders queue.\n");
-    queue_clear(&orders_to_execute);
-    // to taki clear z zawsze odpowiedzią: błąd...
-    if(pthread_mutex_destroy(&orders_mutex) != 0)
-        syserr("pthread_mutex_destroy: While destroying orders queue mutex.");
+    if(pthread_mutex_lock(&orders_mutex) != 0)
+        syserr("pthread_mutex_lock: While locking orders semaphore.");
+    queue_clear(&orders_to_execute);  /* In order to stop the threads. */
+    if(pthread_mutex_unlock(&orders_mutex) != 0)
+        syserr("pthread_mutex_unlock: While unlocking orders semaphore.");
 
-    // poczekaj na wszystkie wątki
+    for(i = 0; i < max_running_threads; i ++)
+        if(pool.working[i])
+            if(pthread_join(pool.threads[i], NULL) != 0)
+                syserr("pthread_join: While waiting for executor threads.");
     if(signal_occurence != 0)
         sleep(1);
+    if(pthread_mutex_destroy(&orders_mutex) != 0)
+        syserr("pthread_mutex_destroy: While destroying orders queue mutex.");
 
     /* CLEANING. */
 
@@ -362,6 +479,7 @@ int main(int argc, char **argv)
         fatal("thread_pool_destroy: While destroying thread pool.");
     if(pthread_mutex_destroy(&pool_mutex) != 0)
         syserr("pthread_mutex_destroy: While destroying thread pool mutex.");
+    free(thread_info);
 
     /* Destroy thread default attribute. */
     fprintf(stdlog, "INFO: Destroying thread default attribute.\n");

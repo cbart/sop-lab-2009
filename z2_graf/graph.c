@@ -4,12 +4,9 @@
 
 #include <stdlib.h>
 #include <assert.h>
-#include <stdio.h>
 #include "customtypes.h"
 #include "err.h"
 #include "graph.h"
-
-#define INFTY 1000000
 
 int graph_init(graph *new_graph, long vertices_quantity)
 {
@@ -22,7 +19,6 @@ int graph_init(graph *new_graph, long vertices_quantity)
     for(i = 0; i < vertices_quantity; i ++)
         if(NULL ==(new_edges[i] = (weight_t *) calloc(vertices_quantity,
                         sizeof(weight_t)))) {
-            //TODO: dealokacja zasobów z malloca powyżej;
             return -1;
         }
     new_graph->vertices_quantity = vertices_quantity;
@@ -65,67 +61,6 @@ long edge_cost(graph *g, long v_from, long v_to)
     return g->edge_weights[v_from][v_to];
 }
 
-typedef struct int_stack_t
-{
-    long i;
-    struct int_stack_t *next;
-} int_stack_t;
-
-int push(int_stack_t **stack, long i)
-{
-    assert(stack != NULL);
-    int_stack_t *new_el;
-    if((new_el = (int_stack_t *) malloc(sizeof(int_stack_t))) == NULL)
-        return -1;
-    new_el->next = *stack;
-    new_el->i = i;
-    *stack = new_el;
-    return 0;
-}
-
-bool empty(int_stack_t *stack)
-{
-    return stack == NULL;
-}
-
-int pop(int_stack_t **stack, long *elem)
-{
-    int_stack_t *old_el;
-    assert(stack != NULL);
-    assert(*stack != NULL);
-    old_el = *stack;
-    *elem = old_el->i;
-    *stack = (*stack)->next;
-    free(old_el);
-    return 0;
-}
-
-int_stack_t * make_stack()
-{
-    return NULL;
-}
-
-bool contains(int_stack_t *stack, long elem)
-{
-    int_stack_t *tmp_stack = stack;
-    while(tmp_stack != NULL) {
-        if(elem == tmp_stack->i)
-            return TRUE;
-        else
-            tmp_stack = tmp_stack->next;
-    }
-    return FALSE;
-}
-
-long find_next(int_stack_t *stack, long min_inclusive, long max_exclusive)
-{
-    long i;
-    for(i = min_inclusive; i < max_exclusive; i ++)
-        if(!contains(stack, i))
-            return i;
-    return -1;
-}
-
 /** Computes cost of a cycle*/
 long cycle_cost(graph *g, long vertices_q, long *vertices, long *perm)
 {
@@ -134,8 +69,6 @@ long cycle_cost(graph *g, long vertices_q, long *vertices, long *perm)
     int i;
     for(i = 0; i < vertices_q - 1; i ++) {
         cur_cost = edge_cost(g, vertices[perm[i]], vertices[perm[i + 1]]);
-        fprintf(stderr, "cost[%ld, %ld] = %ld, ", vertices[perm[i]],
-                vertices[perm[i + 1]], cur_cost);
         if(cur_cost == 0)
             return 0;
         else
@@ -143,8 +76,6 @@ long cycle_cost(graph *g, long vertices_q, long *vertices, long *perm)
     }
     cur_cost = edge_cost(g, vertices[perm[vertices_q - 1]],
             vertices[perm[0]]);
-    fprintf(stderr, "cost[%ld, %ld] = %ld; ",
-            vertices[perm[vertices_q - 1]], vertices[perm[0]], cur_cost);
     if(cur_cost == 0)
         return 0;
     else
@@ -152,7 +83,8 @@ long cycle_cost(graph *g, long vertices_q, long *vertices, long *perm)
     return cost;
 }
 
-/** Computes minimum of `a` and `b` with 0 as infty. */
+/** Computes minimum of `a` and `b`.
+ * Treats `0` as infty. */
 long min(long a, long b)
 {
     /* 0 is infty here. */
@@ -164,6 +96,7 @@ long min(long a, long b)
         return (a < b) ? a : b;
 }
 
+/** Back-tracking function for computing hamiltonian cost of given subgraph. */
 void hamiltonian_cost_backtrack(graph *g, long vertices_q, long *vertices,
         long *v_index_perm, long vertex_index, long *cost)
 {
@@ -191,11 +124,7 @@ void hamiltonian_cost_backtrack(graph *g, long vertices_q, long *vertices,
         }
     }
     else {  /* vertex_index == 0 */
-        fprintf(stderr, "Perm: ");
-        for(i = 0; i < vertices_q; i ++)
-            fprintf(stderr, "%d, ", (int) v_index_perm[i]);
         *cost = min(*cost, cycle_cost(g, vertices_q, vertices, v_index_perm));
-        fprintf(stderr, "Min cost: %d.\n", (int) *cost);
     }
 }
 
@@ -211,12 +140,8 @@ long graph_hamiltonian_cost(graph *g, long vertices_q, long *vertices)
     if((v_index_perm = (long *) malloc(vertices_q * sizeof(long))) == NULL)
         return -1;
 
-    fprintf(stderr, "Hamilton on: ");
-    for(i = 0; i < vertices_q; ++i) {
-        fprintf(stderr, "%ld; ", vertices[i]);
+    for(i = 0; i < vertices_q; ++i)
         v_index_perm[i] = i;
-    }
-    fprintf(stderr, "\n");
 
     hamiltonian_cost_backtrack(g, vertices_q, vertices, v_index_perm,
             vertices_q - 1, &cost);
