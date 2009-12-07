@@ -57,44 +57,65 @@ int thread_pool_create(thread_pool *new_pool, long max_running_threads)
     if((new_pool->threads = (pthread_t *) calloc(sizeof(pthread_t),
                     (size_t) max_running_threads)) == NULL)
         return -1;
-    if((new_pool->sleeping = (pthread_cond_t *) calloc(sizeof(pthread_cond_t),
-                    (size_t) max_running_threads)) == NULL)
-        return -1;
     if(pthread_condattr_init(&(new_pool->cond_attr)) != 0)
         return -1;
-    for(i = 0; i < max_running_threads; i ++)
-        if(pthread_cond_init(new_pool->sleeping + i,
-                    &(new_pool->cond_attr)) != 0)
-            return -1;
+    if(pthread_cond_init(&new_pool->sleeping, &(new_pool->cond_attr)) != 0)
+        return -1;
     new_pool->running_threads = 0;
     new_pool->max_running_threads = max_running_threads;
     new_pool->unused = NULL;
     for(i = 0; i < max_running_threads; i ++)
         new_pool->unused = stack_push(new_pool->unused, i);
-    new_pool->waiting = NULL;
+    new_pool->sleeping_quantity = 0;
     return 0;
 }
 
-pthread_t * thread_pool_get_waiting(thread_pool *pool)
+int thread_pool_wakeup_waiting(thread_pool *pool)
 {
-    pthread_t *waiting_thread;
     assert(pool != NULL);
-    if(!stack_empty(pool->waiting)) {
-        waiting_thread = pool->threads + stack_top(pool->waiting);
-        stack_pop(pool->waiting);
-        return waiting_thread;
+    if(pool->sleeping_quantity > 0) {
+        pthread_cond_signal(&pool->sleeping);
+        return 0;
     }
-    return NULL;
+    else
+        return 1;
+}
+
+void thread_pool_thread_sleep(thread_pool *pool)
+{
+    assert(pool != NULL);
+    pool->sleeping_quantity ++;
+}
+
+void thread_pool_thread_awoken(thread_pool *pool)
+{
+    assert(pool != NULL);
+    pool->sleeping_quantity --;
+}
+
+void stack_printf(thread_id_stack *stack)
+{
+    while(stack != NULL) {
+        fprintf(stderr, "%d; ", (int) stack->id);
+        stack = stack->next;
+    }
 }
 
 pthread_t * thread_pool_get_free(thread_pool *pool)
 {
     pthread_t *free_thread_place;
     assert(pool != NULL);
+    fprintf(stderr, "Thread pool get free.\n");
     if(!stack_empty(pool->unused)) {
+        //fprintf(stderr, "Thread pool get free, stack not empty.\n");
         free_thread_place = pool->threads + stack_top(pool->unused);
-        stack_pop(pool->unused);
+        //fprintf(stderr, "Thread pool get free, stack: ");
+        //stack_printf(pool->unused);
+        pool->unused = stack_pop(pool->unused);
         pool->running_threads ++;
+        //fprintf(stderr, "\n");
+        //stack_printf(pool->unused);
+        //fprintf(stderr, "\n");
         return free_thread_place;
     }
     return NULL;
@@ -110,19 +131,13 @@ void thread_pool_return_thread(thread_pool *pool, pthread_t *joined_thread)
 
 int thread_pool_destroy(thread_pool *pool)
 {
-    size_t i;
     assert(pool != NULL);
     if(pool->unused != NULL)
         stack_destroy(pool->unused);
-    if(pool->waiting != NULL)
-        stack_destroy(pool->waiting);
-    for(i = 0; i < pool->max_running_threads; i ++) {
-        if(pthread_cond_destroy(pool->sleeping + i) != 0)
+    if(pthread_cond_destroy(&pool->sleeping) != 0)
             return -1;
-    }
     if(pthread_condattr_destroy(&(pool->cond_attr)))
         return -1;
-    free(pool->sleeping);
     free(pool->threads);
     return 0;
 }

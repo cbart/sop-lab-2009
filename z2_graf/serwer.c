@@ -75,8 +75,10 @@ void thread_sleep(void *arg)
     ts.tv_sec += info->wait_abstime;
 
     if(info->wait_abstime > 0) {
-        timedwait_result = pthread_cond_timedwait(info->pool->sleeping +
-                info->id, info->orders_sem, &ts);
+        thread_pool_thread_sleep(info->pool);
+        timedwait_result = pthread_cond_timedwait(&info->pool->sleeping,
+                info->orders_sem, &ts);
+        thread_pool_thread_awoken(info->pool);
         if(timedwait_result != 0 && timedwait_result != ETIMEDOUT)
             syserr("phtread_cond_timedwait: in thread while waiting.");
     }
@@ -85,7 +87,7 @@ void thread_sleep(void *arg)
 /* Thread execution function. */
 void * server_thread(void *arg)
 {
-    fprintf(stderr, "Thread started.\n"); /////////////////////////
+    fprintf(stderr, "INFO: Thread started.\n"); /////////////////////////
     thread_info_t *info = (thread_info_t *) arg;
     order_t order;
     respond_msgbuf respond;
@@ -95,16 +97,20 @@ void * server_thread(void *arg)
         syserr("pthread_mutex_lock: While taking orders queue semaphore.");
     while(!queue_empty(info->orders)) {
         while(!queue_empty(info->orders)) {
+            fprintf(stderr, "INFO: Thread loop.\n");
             queue_pop(info->orders, &order);
+            fprintf(stderr, "INFO: Got new order.\n");
             if(pthread_mutex_unlock(info->orders_sem) != 0)
                 syserr("pthread_mutex_unlock: While releasing orders queue "
                         "semaphore.");
             if(!order_is_performable(order, info->g)) {
+                fprintf(stderr, "INFO: Order not performable.\n");
                 respond = make_respond(order, -1);
             }
             else {
                 switch(order.order_type) {
                     case '+':
+                        fprintf(stderr, "INFO: Order is `+`.\n");
                         respond = make_respond(order,
                                 graph_change_edge(info->g,
                                     order.vertices[0],
@@ -112,6 +118,7 @@ void * server_thread(void *arg)
                                     order.edge_weight));
                         break;
                     case '-':
+                        fprintf(stderr, "INFO: Order is `-`.\n");
                         respond = make_respond(order,
                                 1 - graph_change_edge(info->g,
                                     order.vertices[0],
@@ -119,6 +126,7 @@ void * server_thread(void *arg)
                                     0));
                         break;
                     case 'H':
+                        fprintf(stderr, "INFO: Order is `H`.\n");
                         respond = make_respond(order,
                                 graph_hamiltonian_cost(info->g,
                                     order.vertices_quantity,
@@ -128,13 +136,17 @@ void * server_thread(void *arg)
                         fatal("(!!) internal error in executing order.");
                 }
             }
+            fprintf(stderr, "INFO: Sending respond.\n");
             if(msgsnd(info->msg_id, &respond,
                         sizeof(respond) - sizeof(long), 0) != 0)
                 syserr("msgsnd: While sending error respond.");
+            fprintf(stderr, "INFO: Locking queue sem.\n");
             if(pthread_mutex_lock(info->orders_sem) != 0)
                 syserr("pthread_mutex_lock: While taking orders queue "
                         "semaphore.");
+            fprintf(stderr, "INFO: Queue sem locked.\n");
         }
+        fprintf(stderr, "INFO: Sleeping.\n");
         thread_sleep((void *) info);
     }
     if(pthread_mutex_unlock(info->orders_sem) != 0)
@@ -142,6 +154,8 @@ void * server_thread(void *arg)
                 "semaphore.");
 
     pthread_cleanup_pop(TRUE);  /* thread_unregister(info); */
+
+    fprintf(stderr, "INFO: Thread end.\n");
 
     return (void *) 0;
 }
@@ -235,8 +249,8 @@ int main(int argc, char **argv)
     fprintf(stdlog, "INFO: Creating IPC queue.\n");
     if((msg_id = msgget(ipc_key, 0666 | IPC_CREAT | IPC_EXCL)) == -1)
         syserr("msgget: While connecting to IPC.");
-    fprintf(stdlog, "INFO: Getting messages from ipc of key: %d, with id: %d.\n",
-            ipc_key, msg_id);
+    fprintf(stdlog, "INFO: Getting messages from ipc of key: %d, "
+            "with id: %d.\n", ipc_key, msg_id);
 
     /* Create graph. */
     fprintf(stdlog, "INFO: Creating graph.\n");
@@ -291,22 +305,28 @@ int main(int argc, char **argv)
         if(pthread_mutex_lock(&orders_mutex) != 0)
             syserr("pthread_mutex_lock: While taking orders queue semaphore "
                     "in the main thread.");
+        fprintf(stdlog, "INFO: Orders queue mutex locked.\n");
         if(queue_push(&orders_to_execute, buffer.order) != 0)
             fatal("queue_push: While pushing new order into orders queue.");
+        fprintf(stdlog, "INFO: Order pushed.\n");
         if(pthread_mutex_unlock(&orders_mutex) != 0)
             syserr("pthread_mutex_unlock: While unlocking orders queue "
                     "semaphore in the main thread.");
-        if((new_thread = thread_pool_get_waiting(&pool)) != NULL) {
-            if(pthread_cond_signal(pool.sleeping + (new_thread - pool.threads)))
-                syserr("pthread_cond_signal: While waking up an execution "
-                        "thread.");
+        fprintf(stdlog, "INFO: Mutex unlocked.\n");
+        if(thread_pool_wakeup_waiting(&pool) != 0) {
+            if((new_thread = thread_pool_get_free(&pool)) != NULL) {
+                fprintf(stdlog, "INFO: Creating new thread.\n");
+                new_thread_id = new_thread - pool.threads;
+                if(pthread_create(new_thread, &def_attr, thread_function,
+                            (void *) (thread_info + new_thread_id)) != 0)
+                    syserr("pthread_create: While creating "
+                            "new execution thread.");
+            }
+            else
+                fprintf(stdlog, "INFO: Out of threads.\n");
         }
-        else if((new_thread = thread_pool_get_free(&pool)) != NULL) {
-            new_thread_id = new_thread - pool.threads;
-            if(pthread_create(new_thread, &def_attr, thread_function,
-                        (void *) (thread_info + new_thread_id)) != 0)
-                syserr("pthread_create: While creating new execution thread.");
-        }
+        else
+            fprintf(stdlog, "INFO: Thread signaled.\n");
     }
 
     fprintf(stdlog, "INFO: Clearing orders queue.\n");

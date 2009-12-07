@@ -9,7 +9,7 @@
 
 int main(int argc, char **argv)
 {
-    //FILE *stdlog = stderr;
+    FILE *stdlog = stderr;
     char action;
     int i;
     long *vertices;
@@ -66,8 +66,10 @@ int main(int argc, char **argv)
         syserr("msgrcv: While receiving result.");
     switch(action) {
         case '+':
+            fprintf(stdlog, "INFO: Return code: %d.\n", (int) result.code);
             return result.code;
         case '-':
+            fprintf(stdlog, "INFO: Return code: %d.\n", (int) result.code);
             return result.code;
         case 'H':
             fprintf(stdout, "H %d\n", (int) result.code);

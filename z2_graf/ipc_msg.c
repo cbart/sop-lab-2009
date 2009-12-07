@@ -120,6 +120,7 @@ int queue_push(orders_queue *q, order_t order)
     if((new_node = (queue_node *) malloc(sizeof(queue_node))) == NULL)
         return -1;
     new_node->order = order;
+    new_node->next = NULL;
     if(queue_empty(q)) {
         q->front = new_node;
         q->back = new_node;

@@ -47,11 +47,11 @@ typedef struct thread_pool
 {
     pthread_t *threads;
     pthread_condattr_t cond_attr;
-    pthread_cond_t *sleeping;
+    pthread_cond_t sleeping;
     long running_threads;
     long max_running_threads;
     thread_id_stack *unused;
-    thread_id_stack *waiting;
+    long sleeping_quantity;
 } thread_pool;
 
 /** Creates new thread pool.
@@ -60,8 +60,18 @@ typedef struct thread_pool
  *   `0` in other cases. */
 int thread_pool_create(thread_pool *new_pool, long max_running_threads);
 
-/** Gets adress of thread which is to be waken. */
-pthread_t * thread_pool_get_waiting(thread_pool *pool);
+/** Wakes up a thread if there is one sleeping.
+ * Returns:
+ *   `1` if there were no sleeping threads.
+ *   `0` if woke a sleeping thread.
+ *   `-1` in case of an error. */
+int thread_pool_wakeup_waiting(thread_pool *pool);
+
+/** Makes a thread pool know that thread is sleeping. */
+void thread_pool_thread_sleep(thread_pool *pool);
+
+/** Makes a thread pool know that thread has awoken. */
+void thread_pool_thread_awoken(thread_pool *pool);
 
 /** Gets place for the new thread in the pool or `NULL` if there is no space. */
 pthread_t * thread_pool_get_free(thread_pool *pool);
