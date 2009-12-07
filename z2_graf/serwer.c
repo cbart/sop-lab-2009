@@ -120,9 +120,7 @@ void * server_thread(void *arg)
         syserr("pthread_mutex_lock: While taking orders queue semaphore.");
     while(!queue_empty(info->orders)) {
         while(!queue_empty(info->orders)) {
-            fprintf(stderr, "INFO: Thread loop.\n");
             queue_pop(info->orders, &order);
-            fprintf(stderr, "INFO: Got new order.\n");
             if(pthread_mutex_unlock(info->orders_sem) != 0)
                 syserr("pthread_mutex_unlock: While releasing orders queue "
                         "semaphore.");
@@ -226,7 +224,6 @@ void * server_thread(void *arg)
                                         order.vertices[i]) != 0)
                                 syserr("pthread_rwlock_rdlock: While taking "
                                         "graph semaphore.");
-                        fprintf(stderr, "INFO: Order is `H`.\n");
                         respond = make_respond(order,
                                 graph_hamiltonian_cost(info->g,
                                     order.vertices_quantity,
@@ -241,17 +238,13 @@ void * server_thread(void *arg)
                         fatal("(!!) internal error in executing order.");
                 }
             }
-            fprintf(stderr, "INFO: Sending respond.\n");
             if(msgsnd(info->msg_id, &respond,
                         sizeof(respond) - sizeof(long), 0) != 0)
                 syserr("msgsnd: While sending error respond.");
-            fprintf(stderr, "INFO: Locking queue sem.\n");
             if(pthread_mutex_lock(info->orders_sem) != 0)
                 syserr("pthread_mutex_lock: While taking orders queue "
                         "semaphore.");
-            fprintf(stderr, "INFO: Queue sem locked.\n");
         }
-        fprintf(stderr, "INFO: Sleeping.\n");
         thread_sleep((void *) info);
     }
     if(pthread_mutex_unlock(info->orders_sem) != 0)
@@ -259,8 +252,6 @@ void * server_thread(void *arg)
                 "semaphore.");
 
     pthread_cleanup_pop(TRUE);  /* thread_unregister(info); */
-
-    fprintf(stderr, "INFO: Thread end.\n");
 
     return (void *) 0;
 }
@@ -410,14 +401,11 @@ int main(int argc, char **argv)
         if(pthread_mutex_lock(&orders_mutex) != 0)
             syserr("pthread_mutex_lock: While taking orders queue semaphore "
                     "in the main thread.");
-        fprintf(stdlog, "INFO: Orders queue mutex locked.\n");
         if(queue_push(&orders_to_execute, buffer.order) != 0)
             fatal("queue_push: While pushing new order into orders queue.");
-        fprintf(stdlog, "INFO: Order pushed.\n");
         if(pthread_mutex_unlock(&orders_mutex) != 0)
             syserr("pthread_mutex_unlock: While unlocking orders queue "
                     "semaphore in the main thread.");
-        fprintf(stdlog, "INFO: Mutex unlocked.\n");
         if(pthread_mutex_lock(&pool_mutex) != 0)
             syserr("pthread_mutex_lock: While locking pool mutex "
                     "in the main thread.");
