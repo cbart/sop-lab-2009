@@ -28,11 +28,12 @@ void graph_destroy(graph *g);
 
 /** Changes given `Edge` in `Graph` pointed by `g`.
  * Return value:
- *   `0` - if edge was inserted properly.
+ *   `0` - if edge was inserted (before there was no edge).
+ *   `1` - if edge was changed (there was edge before).
  *   `-1` - if edge is incorrect (e.g. verticle indexes out of bounds). */
 int graph_change_edge(graph *g, long edge_from, long edge_to, weight_t weight);
 
-/** Computes cost of hamilton cycle. */
-long graph_hamilton_cost(graph *g, long verticles_q, long* verticles);
+/** Computes minimal cost of hamiltonian cycle. */
+long graph_hamiltonian_cost(graph *g, long vertices_q, long* vertices);
 
-#endif
+#endif  /* _GRAPH_H_ */

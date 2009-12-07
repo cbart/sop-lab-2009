@@ -11,6 +11,15 @@
 #include "ipc_msg.h"
 #include "customtypes.h"
 
+#define MY_DEFAULT_IPC_KEY 19890630
+
+order_t order_signal()
+{
+    order_t order;
+    order.order_type = 'S';
+    return order;
+}
+
 order_t order_add_edge(long edge_from, long edge_to, weight_t weight)
 {
     order_t order;
@@ -32,7 +41,7 @@ order_t order_remove_edge(long edge_from, long edge_to)
     return order;
 }
 
-order_t order_hamilton_cycle(long vertices_quantity, long *vertices)
+order_t order_hamiltonian_cycle(long vertices_quantity, long *vertices)
 {
     long i;
     order_t order;
@@ -81,6 +90,14 @@ bool order_is_performable(order_t order, graph *g)
             return FALSE;
     }
     return TRUE;
+}
+
+respond_msgbuf make_respond(order_t order, long code)
+{
+    respond_msgbuf respond;
+    respond.msg_type = order.client_pid;
+    respond.code = code;
+    return respond;
 }
 
 void queue_create(orders_queue *q)
@@ -139,9 +156,9 @@ void queue_clear(orders_queue *q)
 
 key_t get_ipc_key()
 {
-    char *dir = "/tmp";
-    key_t ipc_key;
-    if((ipc_key = ftok(dir, CHAR_FLAG)) == (key_t) -1)
-        return -1;
+    //char *dir = "/tmp";
+    key_t ipc_key = MY_DEFAULT_IPC_KEY;
+    //if((ipc_key = ftok(dir, CHAR_FLAG)) == (key_t) -1)
+    //    return -1;
     return ipc_key;
 }

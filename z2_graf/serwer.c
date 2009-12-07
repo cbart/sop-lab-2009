@@ -2,6 +2,8 @@
  * author: Cezary Bartoszuk <cbart@students.mimuw.edu.pl>  *
  *     id: cb277617@students.mimuw.edu.pl                  */
 
+#define _MULTI_THREADED
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,83 +11,351 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <pthread.h>
+#include <signal.h>
+#include <sys/time.h>
+#include <errno.h>
 
+#include "customtypes.h"
 #include "err.h"
 #include "ipc_msg.h"
+#include "thread_pool.h"
+#include "graph.h"
 
-void * server_thread(void *arg)
-/* Co trzeba przekazać tej funkcji?
- *   numer tego wątku w tablicy wątków.
- *   adres stosu indeksów wolnych wątków.
- *   */
+/* We have to use `sleep` at the end of the main thread.
+ * So to prevent `longjmp` while sleeping (if a signal would
+ * come while sleeping) we use the global `signal_occurence`. */
+volatile sig_atomic_t signal_occurence = 0;
+
+/* Handling signal. */
+void signal_handler(int sig_num)
 {
-    thread_register();
-    pthread_cleanup_push(thread_unregister);
-    int timedwait_result;
-    while() { /* dopóki są jeszcze nieobsłużone rozkazy. */
-        while() { /* dopóki są jeszcze nieobsłużone rozkazy. */
-            if(główny_wątek_dał_sygnał_do_zakończenia)
-                return koniec;
-            pthread_cleanup_push(odpowiedz_klientowi_bledem());
-            pobierz_rozkaz();
-            if(!rozkaz_jest_poprawny())
-                zwróć_wynik(błąd);
-            else {
-                obsłuż_rozkaz();
-                zwróć_wynik();
-            }
-            pthread_cleanup_pop(FALSE);  /* odpowiedz_klientowi_bledem(); */
-        }
-        timedwait_result = pthread_cond_timedwait(cond, mutex, abstime);
-        if(timedwait_result != 0 && timedwait != ETIMEDOUT)
-            syserr("Error in thread: phtread_cond_timedwait.");
+    order_msgbuf message;
+    message.msg_type = IPC_ORDERS_RESERVED;
+    message.order = order_signal();
+    if(signal_occurence == 0) {
+        signal_occurence = 1;
     }
-    pthread_cleanup_pop(TRUE);  /* thread_unregister(); */
 }
-/*
- * Czy w wypadku SIGINTa i innych takich ustawiamy sobie zmienną: zakończcie się
- * wszyscy i czytamy ją w wątkach, czy raczej dajemy cancel i w wątku dajemy
- * przed obsłużeniem każdego zapytania sztuczny cancelation point?
- *
- * Jak podczas zakończenia wątku informujemy główny wątek o tym, że "zwolniło
- * się miejsce"?
- * ODP: W procedurze thread_unregister() wykonujemy co następuje:
- * 1. odejmujemy jedynkę od licznika odpalonych wątków.
- * 2. dodajemy swój indeks wątku (w tablicy wątków) na stos "wolnych indeksów".
- * w momencie, gdy główny wątek chce utworzyć nowy proces robi tak:
- * jak stos jest niepusty to bierze indeks z góry i tworzy wątek.
- * wpp. jeżeli liczba odpalonych procesów jest < maksymalnej to
- * bierze liczbę odpalonych procesów, tworzy wątek o indeksie równym tej liczbie
- * i dodaje jedynkę do liczby odpalonych procesów.
- *
- */
-int main(void)
+
+/* Thread argument structure. */
+typedef struct thread_info_t
 {
+    thread_pool *pool;             /* Thread pool. */
+    pthread_mutex_t *pool_sem;     /* Thread pool semaphore. */
+    orders_queue *orders;          /* Orders queue. */
+    pthread_mutex_t *orders_sem;   /* Orders queue semaphore. */
+    graph *g;                      /* Graph. */
+    pthread_rwlock_t* graph_sems;  /* Graph semaphores. */
+    int msg_id;                    /* IPC queue id. */
+    thread_id id;                  /* This thread id. */
+    long wait_abstime;             /* Thread max sleeping time. */
+} thread_info_t;
+
+void thread_register(void *arg)
+{
+    //thread_info_t *info = (thread_info_t *) arg;
+}
+
+void thread_unregister(void *arg)
+{
+    thread_info_t *info = (thread_info_t *) arg;
+    thread_pool_return_thread(info->pool, info->pool->threads + info->id);
+}
+
+void thread_sleep(void *arg)
+{
+    struct timespec ts;
+    struct timeval tv;
+    int timedwait_result;
+    thread_info_t *info = (thread_info_t *) arg;
+
+    gettimeofday(&tv, NULL);
+    ts.tv_sec = tv.tv_sec;
+    ts.tv_nsec = tv.tv_usec * 1000;
+    ts.tv_sec += info->wait_abstime;
+
+    if(info->wait_abstime > 0) {
+        timedwait_result = pthread_cond_timedwait(info->pool->sleeping +
+                info->id, info->orders_sem, &ts);
+        if(timedwait_result != 0 && timedwait_result != ETIMEDOUT)
+            syserr("phtread_cond_timedwait: in thread while waiting.");
+    }
+}
+
+/* Thread execution function. */
+void * server_thread(void *arg)
+{
+    fprintf(stderr, "Thread started.\n"); /////////////////////////
+    thread_info_t *info = (thread_info_t *) arg;
+    order_t order;
+    respond_msgbuf respond;
+    thread_register((void *) info);
+    pthread_cleanup_push(thread_unregister, (void *) info);
+    if(pthread_mutex_lock(info->orders_sem) != 0)
+        syserr("pthread_mutex_lock: While taking orders queue semaphore.");
+    while(!queue_empty(info->orders)) {
+        while(!queue_empty(info->orders)) {
+            queue_pop(info->orders, &order);
+            if(pthread_mutex_unlock(info->orders_sem) != 0)
+                syserr("pthread_mutex_unlock: While releasing orders queue "
+                        "semaphore.");
+            if(!order_is_performable(order, info->g)) {
+                respond = make_respond(order, -1);
+            }
+            else {
+                switch(order.order_type) {
+                    case '+':
+                        respond = make_respond(order,
+                                graph_change_edge(info->g,
+                                    order.vertices[0],
+                                    order.vertices[1],
+                                    order.edge_weight));
+                        break;
+                    case '-':
+                        respond = make_respond(order,
+                                1 - graph_change_edge(info->g,
+                                    order.vertices[0],
+                                    order.vertices[1],
+                                    0));
+                        break;
+                    case 'H':
+                        respond = make_respond(order,
+                                graph_hamiltonian_cost(info->g,
+                                    order.vertices_quantity,
+                                    order.vertices));
+                        break;
+                    default:
+                        fatal("(!!) internal error in executing order.");
+                }
+            }
+            if(msgsnd(info->msg_id, &respond,
+                        sizeof(respond) - sizeof(long), 0) != 0)
+                syserr("msgsnd: While sending error respond.");
+            if(pthread_mutex_lock(info->orders_sem) != 0)
+                syserr("pthread_mutex_lock: While taking orders queue "
+                        "semaphore.");
+        }
+        thread_sleep((void *) info);
+    }
+    if(pthread_mutex_unlock(info->orders_sem) != 0)
+        syserr("pthread_mutex_unlock: While releasing orders queue "
+                "semaphore.");
+
+    pthread_cleanup_pop(TRUE);  /* thread_unregister(info); */
+
+    return (void *) 0;
+}
+
+int main(int argc, char **argv)
+{
+    /* DECLARATION. */
+
+    int i;  /* for the loops. */
+    size_t new_thread_id;
+    FILE *stdlog = stderr;
+
+    struct sigaction signal_action;
+    struct sigaction old_action_int, old_action_hup, old_action_term;
+
+    /* Variables for synchronization. */
+    pthread_mutexattr_t mutex_attr;
+    pthread_rwlockattr_t rwlock_attr;
+
+    /* Variables covering the threads. */
+    long max_running_threads;
+    thread_pool pool;
+    pthread_mutex_t pool_mutex;
+    pthread_t *new_thread;
+    pthread_attr_t def_attr;
+    void * (* thread_function)(void *) = server_thread;
+    thread_info_t* thread_info;
+    long wait_abstime;
+
+    /* Variables covering IPC messaging. */
     int msg_id;
-    struct msgbuf *buffer;
-    size_t buf_size;
+    order_msgbuf buffer;
+    size_t buf_size = sizeof(order_t);
     key_t ipc_key = get_ipc_key();
 
-    /* Create IPC queue. */
-    msg_id = msgget(ipc_key, IPC_CREAT|IPC_EXCL);
+    /* Variables covering orders. */
+    orders_queue orders_to_execute;
+    pthread_mutex_t orders_mutex;
 
-    while(TRUE) {
-        /* Get request from IPC. */
-        if(msgrcv(msg_id, buffer, buf_size, IPC_ORDERS_RESERVED, 0) == -1)
-            syserr("msgrcv: While receiving IPC message.");
-        
-        dodaj_rozkaz_do_kolejki_rozkazów();
-        if(wątek czeka)
-            obudź wątek;
-        else if(liczba wątków < maksymalna liczba wątkow)
-            utwórz wątek;
+    /* Variables covering graph. */
+    size_t vertices_quantity;
+    graph g;
+    pthread_rwlock_t *graph_sems;
+
+    /* PROGRAM ARGUMENTS. */
+
+    if(argc == 4) {
+        vertices_quantity = atoi(argv[1]);
+        max_running_threads = atoi(argv[2]);
+        wait_abstime = atoi(argv[3]);
+    }
+    else
+        return -1;
+
+    /* INITIALIZATION. */
+
+    /* Signals handlers init. */
+    signal_action.sa_handler = signal_handler;
+    sigemptyset(&(signal_action.sa_mask));
+    signal_action.sa_flags = 0;
+
+    sigaction(SIGINT, &signal_action, &old_action_int);
+    sigaction(SIGHUP, &signal_action, &old_action_hup);
+    sigaction(SIGTERM, &signal_action, &old_action_term);
+
+    /* Create mutex and rwlock attribute. */
+    fprintf(stdlog, "INFO: Creating mutex and rwlock attributes.\n");
+    if(pthread_mutexattr_init(&mutex_attr) != 0)
+        syserr("pthread_mutexattr_init: While initializing mutexes' attr.");
+    if(pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_ERRORCHECK) != 0)
+        syserr("pthread_mutexattr_settype: While setting mutexattr's type.");
+    if(pthread_rwlockattr_init(&rwlock_attr) != 0)
+        syserr("pthread_rwlockattr_init: While initializing rwlock attr.");
+
+    /* Thread attribute initialization. */
+    fprintf(stdlog, "INFO: Creating thread attributes.\n");
+    if(pthread_attr_init(&def_attr) != 0)
+        syserr("pthread_attr_init: While creating default pthread attributes.");
+    if(pthread_attr_setdetachstate(&def_attr, PTHREAD_CREATE_JOINABLE) != 0)
+        syserr("pthread_attr_setdetachstate: "
+                "While setting default detach state.");
+
+    /* Create thread pool. */
+    fprintf(stdlog, "INFO: Creating thread pool.\n");
+    if(pthread_mutex_init(&pool_mutex, &mutex_attr) != 0)
+        syserr("pthread_mutex_init: While initializing mutex for thread pool.");
+    if(thread_pool_create(&pool, max_running_threads) != 0)
+        fatal("thread_pool_create: While creating server thread pool.");
+
+    /* Create IPC queue. */
+    fprintf(stdlog, "INFO: Creating IPC queue.\n");
+    if((msg_id = msgget(ipc_key, 0666 | IPC_CREAT | IPC_EXCL)) == -1)
+        syserr("msgget: While connecting to IPC.");
+    fprintf(stdlog, "INFO: Getting messages from ipc of key: %d, with id: %d.\n",
+            ipc_key, msg_id);
+
+    /* Create graph. */
+    fprintf(stdlog, "INFO: Creating graph.\n");
+    if(graph_init(&g, vertices_quantity) != 0)
+        fatal("graph_init: While creating graph.");
+    if((graph_sems = (pthread_rwlock_t *) malloc(vertices_quantity *
+            sizeof(pthread_rwlock_t))) == NULL)
+        syserr("malloc: While allocating space for graph's mutexes.");
+    for(i = 0; i < vertices_quantity; i ++)
+        if(pthread_rwlock_init(graph_sems + i, &rwlock_attr) != 0)
+            syserr("pthread_mutex_init: While initializing mutex.");
+
+    /* Create orders queue. */
+    fprintf(stdlog, "INFO: Creating orders queue.\n");
+    if(pthread_mutex_init(&orders_mutex, &mutex_attr) != 0)
+        syserr("pthread_mutex_init: While creating orders queue mutex.");
+    queue_create(&orders_to_execute);
+
+    /* SETUP. */
+
+    /* Set information for threads. */
+
+    thread_info = (thread_info_t *) calloc((size_t) max_running_threads,
+            sizeof(thread_info_t));
+    thread_info[0].pool = &pool;
+    thread_info[0].pool_sem = &pool_mutex;
+    thread_info[0].orders = &orders_to_execute;
+    thread_info[0].orders_sem = &orders_mutex;
+    thread_info[0].g = &g;
+    thread_info[0].graph_sems = graph_sems;
+    thread_info[0].msg_id = msg_id;
+    thread_info[0].id = 0;
+    thread_info[0].wait_abstime = wait_abstime;
+    for(i = 1; i < max_running_threads; i ++) {
+        thread_info[i] = thread_info[0];
+        thread_info[i].id = i;
     }
 
-    // zakończ wszystkie wątki
+    /* MAIN LOOP. */
+    while(signal_occurence == 0) {
+        /* Get request from IPC. */
+        if(msgrcv(msg_id, &buffer, buf_size, IPC_ORDERS_RESERVED, 0) <= 0) {
+            if(errno == EINTR) {
+                fprintf(stdlog, "INFO: Signal occured. Aborting.\n");
+                break;
+            }
+            else
+                syserr("msgrcv: While receiving IPC message.");
+        }
+        fprintf(stdlog, "INFO: Order received.\n");
+        /* Store order in orders queue. */
+        if(pthread_mutex_lock(&orders_mutex) != 0)
+            syserr("pthread_mutex_lock: While taking orders queue semaphore "
+                    "in the main thread.");
+        if(queue_push(&orders_to_execute, buffer.order) != 0)
+            fatal("queue_push: While pushing new order into orders queue.");
+        if(pthread_mutex_unlock(&orders_mutex) != 0)
+            syserr("pthread_mutex_unlock: While unlocking orders queue "
+                    "semaphore in the main thread.");
+        if((new_thread = thread_pool_get_waiting(&pool)) != NULL) {
+            if(pthread_cond_signal(pool.sleeping + (new_thread - pool.threads)))
+                syserr("pthread_cond_signal: While waking up an execution "
+                        "thread.");
+        }
+        else if((new_thread = thread_pool_get_free(&pool)) != NULL) {
+            new_thread_id = new_thread - pool.threads;
+            if(pthread_create(new_thread, &def_attr, thread_function,
+                        (void *) (thread_info + new_thread_id)) != 0)
+                syserr("pthread_create: While creating new execution thread.");
+        }
+    }
+
+    fprintf(stdlog, "INFO: Clearing orders queue.\n");
+    queue_clear(&orders_to_execute);
+    // to taki clear z zawsze odpowiedzią: błąd...
+    if(pthread_mutex_destroy(&orders_mutex) != 0)
+        syserr("pthread_mutex_destroy: While destroying orders queue mutex.");
+
+    // poczekaj na wszystkie wątki
+    if(signal_occurence != 0)
+        sleep(1);
+
+    /* CLEANING. */
+
+    /* Destroy the graph. */
+    fprintf(stdlog, "INFO: Destroying graph.\n");
+    for(i = vertices_quantity - 1; i >= 0; i --)
+        if(pthread_rwlock_destroy(graph_sems + i) != 0)
+            syserr("pthread_rwlock_destroy: While destroying graph's mutexes.");
+    fprintf(stdlog, "INFO: Freeing graph semaphores.\n");
+    free(graph_sems);
+    fprintf(stdlog, "INFO: Destroying the graph.\n");
+    graph_destroy(&g);
 
     /* Remove IPC queue. */
+    fprintf(stdlog, "INFO: Removing IPC queue.\n");
     if(msgctl(msg_id, IPC_RMID, NULL) != 0)
         syserr("msgctl: While removing IPC message queue.");
+
+    /* Destroy thread pool. */
+    fprintf(stdlog, "INFO: Destroying thread pool.\n");
+    if(thread_pool_destroy(&pool) != 0)
+        fatal("thread_pool_destroy: While destroying thread pool.");
+    if(pthread_mutex_destroy(&pool_mutex) != 0)
+        syserr("pthread_mutex_destroy: While destroying thread pool mutex.");
+
+    /* Destroy thread default attribute. */
+    fprintf(stdlog, "INFO: Destroying thread default attribute.\n");
+    if(pthread_attr_destroy(&def_attr) != 0)
+        syserr("pthread_attr_destroy: "
+                "While destroying default pthread attributes");
+
+    /* Destroy mutex and rwlock attribute. */
+    fprintf(stdlog, "INFO: Destroying mutex and rwlock attribute.\n");
+    if(pthread_rwlockattr_destroy(&rwlock_attr) != 0)
+        syserr("pthread_rwlockattr_destroy: While destroying rwlocks' attr.");
+    if(pthread_mutexattr_destroy(&mutex_attr) != 0)
+        syserr("pthread_mutexattr_destroy: While destroying mutexes' attr.");
+
     return 0;
 }
 

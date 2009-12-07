@@ -12,4 +12,4 @@ typedef enum
     FALSE = 0
 } bool;
 
-#endif
+#endif /* _CUSTOMTYPES_H_ */

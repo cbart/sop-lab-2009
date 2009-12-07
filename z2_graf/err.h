@@ -7,4 +7,4 @@ extern void syserr(const char *fmt, ...);
 /* Puts information about error in application to stderr. */
 extern void fatal(const char *fmt, ...);
 
-#endif
+#endif  /* _ERR_H_ */

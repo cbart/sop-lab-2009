@@ -18,7 +18,7 @@
  * are reserved for Client->Server queries.
  * Server respond will have always type IPC_ORDERS_RESERVED + PID
  * where PID is id of client process. */
-#define IPC_ORDERS_RESERVED 1
+#define IPC_ORDERS_RESERVED 1L
 
 /** Maximum vertices*/
 #define ORDER_MAX_VERTICES 50
@@ -27,10 +27,27 @@
 typedef struct order_t
 {
     char order_type; /** ['+', '-', 'H']; */
+    long client_pid;
     long vertices[ORDER_MAX_VERTICES];
     long vertices_quantity;
     weight_t edge_weight; /** if order_type == '+' here is the edge weight. */
 } order_t;
+
+/** Message buffer. */
+typedef struct order_msgbuf
+{
+    long msg_type;
+    order_t order;
+} order_msgbuf;
+
+typedef struct respond_msgbuf
+{
+    long msg_type;
+    long code;
+} respond_msgbuf;
+
+/** Creates `order` informing about signal occurence. */
+order_t order_signal();
 
 /** Creates order, which adds edge `edge_from`->`edge_to`
  * with given `weight`. */
@@ -41,13 +58,16 @@ order_t order_remove_edge(long edge_from, long edge_to);
 
 /** Creates order, which cheks hamilton cycle
  * in a subgraph of given vertices array. */
-order_t order_hamilton_cycle(long vertices_quantity, long *vertices);
+order_t order_hamiltonian_cycle(long vertices_quantity, long *vertices);
 
 /** Checks if `order` is performable on given graph `g`.
  * Returns:
  *   `FALSE` if order is not performable on given graph.
  *   `TRUE` in other cases. */
 bool order_is_performable(order_t order, graph *g);
+
+/** Creates respond to given order with given code. */
+respond_msgbuf make_respond(order_t order, long code);
 
 /** Single node of orders queue. */
 typedef struct queue_node
@@ -92,4 +112,4 @@ void queue_clear(orders_queue *q);
  *   ipc key in other cases. */
 key_t get_ipc_key();
 
-#endif
+#endif  /* _IPC_MSG_H_ */

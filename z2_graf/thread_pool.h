@@ -46,9 +46,12 @@ void stack_destroy(thread_id_stack *stack);
 typedef struct thread_pool
 {
     pthread_t *threads;
+    pthread_condattr_t cond_attr;
+    pthread_cond_t *sleeping;
     long running_threads;
     long max_running_threads;
     thread_id_stack *unused;
+    thread_id_stack *waiting;
 } thread_pool;
 
 /** Creates new thread pool.
@@ -57,6 +60,9 @@ typedef struct thread_pool
  *   `0` in other cases. */
 int thread_pool_create(thread_pool *new_pool, long max_running_threads);
 
+/** Gets adress of thread which is to be waken. */
+pthread_t * thread_pool_get_waiting(thread_pool *pool);
+
 /** Gets place for the new thread in the pool or `NULL` if there is no space. */
 pthread_t * thread_pool_get_free(thread_pool *pool);
 
@@ -64,6 +70,6 @@ pthread_t * thread_pool_get_free(thread_pool *pool);
 void thread_pool_return_thread(thread_pool *pool, pthread_t *joined_thread);
 
 /** Destroys thread pool pointed by `pool`. */
-void thread_pool_destroy(thread_pool *pool);
+int thread_pool_destroy(thread_pool *pool);
 
-#endif
+#endif  /* _THREAD_POOL_H_ */
