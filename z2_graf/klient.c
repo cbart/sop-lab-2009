@@ -47,7 +47,7 @@ int main(int argc, char **argv)
                     == NULL)
                 syserr("calloc: When allocating space for vertices.");
             for(i = 0; i < vertices_quantity; i ++)
-                vertices[i] = atoi(argv[i]);
+                vertices[i] = (long) atoi(argv[i + 2]);
             message.order = order_hamiltonian_cycle(vertices_quantity,
                     vertices);
             break;
