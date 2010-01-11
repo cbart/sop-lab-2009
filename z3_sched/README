@@ -1,0 +1,10 @@
+MySched user-space threads library.
+
+Author: Cezary Bartoszuk
+E-mail: cbart@students.mimuw.edu.pl
+Username: cb277617@students.mimuw.edu.pl
+
+* sched_stack.h / sched_stack.c
+    Defines void *mysched_stack_alloc(size_t) and mysched_stack_free(void *) which
+    cover allocating and freeing stacks for user-space threads.
+
