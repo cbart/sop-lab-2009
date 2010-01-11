@@ -16,10 +16,10 @@ extern "C" {
     #define BYTE_SIZE sizeof(byte)
 
     /** Allocates `bytes` of memory for a new stack. */
-    void *mysched_stack_alloc(size_t bytes);
+    stack_t *mysched_stack_alloc(size_t bytes);
 
     /** Frees memory allocated by `alloc_stack`. */
-    void mysched_stack_free(void *stack_ptr);
+    void mysched_stack_free(stack_t *stack_ptr);
 
 #ifdef __cplusplus
 }
