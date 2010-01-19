@@ -32,6 +32,6 @@ int queue_shift_forward(queue_entry_t **q);
 int queue_shift_backward(queue_entry_t **q);
 
 /** Obtains poiter to stored value. */
-int queue_get(queue_entry_t **q, void *value);
+int queue_get(queue_entry_t **q, void **value);
 
 #endif  /* _SCHED_QUEUE_H_ */

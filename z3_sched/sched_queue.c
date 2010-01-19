@@ -71,10 +71,10 @@ int queue_shift_backward(queue_entry_t **q)
     return 0;
 }
 
-int queue_get(queue_entry_t **q, void *value)
+int queue_get(queue_entry_t **q, void **value)
 {
     if(queue_is_empty(*q))
         return 1;
-    value = (*q)->value;
+    *value = (*q)->value;
     return 0;
 }
